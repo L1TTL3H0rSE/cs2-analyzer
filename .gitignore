@@ -7,6 +7,7 @@ demos/
 collector/node_modules/
 collector/.browser-profile/
 collector/state.json
-# выгрузки Leetify хранить нельзя (правила их API)
+# выгрузки Leetify — только локально для тестов, не в продукт и не в git (правила их API)
 analysis/leetify/**/*.json
+data/
 __pycache__/

@@ -1,0 +1,12 @@
+# Данные — не в git: демки, таблицы из них (ники и steamid других игроков), сессия FACEIT, состояние сборщика
+demos/
+*.pkl
+*.csv
+*.log
+.env
+collector/node_modules/
+collector/.browser-profile/
+collector/state.json
+# выгрузки Leetify хранить нельзя (правила их API)
+analysis/leetify/**/*.json
+__pycache__/

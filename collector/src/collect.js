@@ -31,8 +31,12 @@ try {
     : await listMatchesBrowser(page, config.historySize);
   log(`матчей в истории: ${matches.length}`);
 
+  const iso = (sec) => (sec ? new Date(sec * 1000).toISOString() : null);
   for (const { matchId, finishedAt } of matches) {
-    if (state.done[matchId] && !onlyMatch) continue;
+    if (state.done[matchId] && !onlyMatch) {
+      state.done[matchId].finishedAt ??= iso(finishedAt); // время матча для старых записей
+      continue;
+    }
     try {
       const info = await getDemoResourceBrowser(page, matchId, me);
       if (!info.resourceUrl) { log(matchId, 'нет demo_url:', info.status ?? info.error); continue; }
@@ -50,7 +54,7 @@ try {
       // .part → rename: недокачанный файл не выглядит готовой демкой
       await pipeline(Readable.fromWeb(res.body), createWriteStream(file + '.part'));
       renameSync(file + '.part', file);
-      state.done[matchId] = { file, map: info.map, won: info.won, score: info.score, at: new Date().toISOString() };
+      state.done[matchId] = { file, map: info.map, won: info.won, score: info.score, finishedAt: iso(finishedAt), at: new Date().toISOString() };
       save();
       log(matchId, '→', file);
     } catch (e) {
@@ -58,6 +62,7 @@ try {
       log(matchId, 'ошибка:', e.message);
     }
   }
+  save();
 } finally {
   await context.close();
 }

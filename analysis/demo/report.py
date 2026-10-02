@@ -1,7 +1,7 @@
 # Подробный разбор своей игры по таблицам extract.py.
 #   python report.py [папка с res_*.pkl]   (по умолчанию ../../demos/parsed)
 # Лобби — все остальные игроки этих матчей, отыгравшие >=90% раундов. CI — bootstrap по матчам.
-import pickle, glob, os, sys
+import pickle, glob, json, os, sys
 from bisect import bisect_right
 from collections import Counter, defaultdict
 import numpy as np, pandas as pd
@@ -138,6 +138,15 @@ def match(name, R):
     return dict(pm=pm, rounds=rounds, clutches=clutches, deaths_me=deaths_me, near=near, score=score, short=short,
                 d=d, h=h, pl=pl, end=end, keep=keep, traded=traded_all,
                 team_of={s: pl[n].get(s) for s in pl[n]}, aim=R['aim'].assign(m=name, map=R['map']))
+
+
+def lobby_elo(m):
+    """Средний ELO лобби матча из кэша комнаты FACEIT (collector: npm run history), иначе nan."""
+    f = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'data', 'faceit', 'matches', '1-' + m.split('_1-')[1] + '.json')
+    if not os.path.exists(f): return np.nan
+    t = json.load(open(f, encoding='utf-8'))['teams']
+    e = [r['elo'] for k in ('faction1', 'faction2') for r in t[k]['roster'] if r.get('elo')]
+    return float(np.mean(e)) if e else np.nan
 
 
 def ratio_ci(num, den, B=2000):

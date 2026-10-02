@@ -4,7 +4,7 @@
 import glob, os, pickle, sys
 from collections import Counter
 import numpy as np, pandas as pd
-from report import match, ME, ratio_ci
+from report import match, ME, ratio_ci, lobby_elo
 from duels import annotate, MOVE, HOLD
 from impact import rounds_of, model
 
@@ -35,6 +35,9 @@ def wl(g):
 
 
 print(f"{MAP}: до {SINCE} — {wl('до')}; после — {wl('после')}")
+el = {g: np.nanmean([lobby_elo(m) for m in by[g]]) for g in GR}
+# ponytail: −3.4 ADR на +100 ELO лобби — оценка analysis/faceit/elo.py по 100 матчам; пересчитать, когда матчей станет больше
+print(f"  средний ELO лобби: до {el['до']:.0f} | после {el['после']:.0f} → только из-за лобби ожидаемо ADR {-3.4 * (el['после'] - el['до']) / 100:+.1f}")
 print(f"  {'':46} {'до':>16} | после")
 
 # общая игра

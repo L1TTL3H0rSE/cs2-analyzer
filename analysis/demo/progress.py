@@ -3,6 +3,7 @@
 import glob, os, pickle, sys
 import numpy as np, pandas as pd
 from duels import ME, MOVE, HOLD, wilson
+from report import lobby_elo
 
 FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'demos', 'parsed')
 SINCE = sys.argv[1] if len(sys.argv) > 1 else '2026-10-01'
@@ -32,6 +33,8 @@ def share(x, mask):
 
 
 print(f"ФОКУСМАП: до {SINCE} — {me[~me.after].m.nunique()} матчей, после — {me[me.after].m.nunique()} матчей")
+el = [np.nanmean([lobby_elo(m) for m in me[me.after == a].m.unique()]) for a in (False, True)]
+print(f"  средний ELO лобби: до {el[0]:.0f}, после {el[1]:.0f} (сильнее лобби — ниже абсолютные цифры: ~−3.4 ADR на +100 ELO)")
 for lab, after in (('до', False), ('после', True)):
     x = me[me.after == after]; mv = x[(x.spd > MOVE) & (x.off0 < 15)]
     lx = lob[lob.after == after]; lmv = lx[(lx.spd > MOVE) & (lx.off0 < 15)]

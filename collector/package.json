@@ -5,7 +5,8 @@
   "scripts": {
     "login": "node src/login.js",
     "collect": "node src/collect.js",
-    "import": "node src/import.js"
+    "import": "node src/import.js",
+    "history": "node src/history.js"
   },
   "dependencies": {
     "playwright": "^1.48.0"

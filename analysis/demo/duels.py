@@ -192,19 +192,9 @@ def blame(x):
     return 'аим', 'попадал, но меньше/не в голову'
 
 
-def main(folder):
-    D = []
-    for f in sorted(glob.glob(os.path.join(folder, 'res_*.pkl'))):
-        name = os.path.basename(f)[4:-4]; cache = os.path.join(folder, f'duels_{name}.pkl')
-        if not os.path.exists(cache):
-            x = duels(name, pickle.load(open(f, 'rb')), os.path.join(folder, '..', f'{name}.dem.zst'))
-            pickle.dump(x, open(cache, 'wb')); print('разобран', name, flush=True)
-        x = pickle.load(open(cache, 'rb'))
-        if x is not None: D.append(x)
-    D = pd.concat(D, ignore_index=True)
+def annotate(D):
+    """Группы оружия, ожидаемый винрейт матчапа (как его играет лобби), причина смерти и тип убийства."""
     D['k_grp'] = D.k_grp.astype(object).where(D.k_grp.notna(), None); D['v_grp'] = D.v_grp.astype(object).where(D.v_grp.notna(), None)
-
-    # ожидаемый винрейт по оружию: как этот матчап играет лобби
     ok = ~D.post & D.k_grp.notna() & D.v_grp.notna()
     per = pd.concat([D[ok].assign(P=D.K, keep=D.keepK, me_g=D.k_grp, op_g=D.v_grp, won=True),
                      D[ok].assign(P=D.V, keep=D.keepV, me_g=D.v_grp, op_g=D.k_grp, won=False)])
@@ -214,6 +204,19 @@ def main(folder):
     D['exp_k'] = [exp.get((a, b), np.nan) for a, b in zip(D.k_grp, D.v_grp)]
     D['cat'], D['sub'] = zip(*[blame(x) for x in D.itertuples()])
     D['kill'] = [why(x) for x in D.itertuples()]
+    return D, per, exp, ok
+
+
+def main(folder):
+    D = []
+    for f in sorted(glob.glob(os.path.join(folder, 'res_*.pkl'))):
+        name = os.path.basename(f)[4:-4]; cache = os.path.join(folder, f'duels_{name}.pkl')
+        if not os.path.exists(cache):
+            x = duels(name, pickle.load(open(f, 'rb')), os.path.join(folder, '..', f'{name}.dem.zst'))
+            pickle.dump(x, open(cache, 'wb')); print('разобран', name, flush=True)
+        x = pickle.load(open(cache, 'rb'))
+        if x is not None: D.append(x)
+    D, per, exp, ok = annotate(pd.concat(D, ignore_index=True))
     my_d, my_k = D[D.V == ME], D[D.K == ME]
     lob_d, lob_k = D[(D.V != ME) & D.keepV], D[(D.K != ME) & D.keepK]
     print(f"матчей {D.m.nunique()}, дуэлей {len(D)}; твоих убийств {len(my_k)}, смертей {len(my_d)}")

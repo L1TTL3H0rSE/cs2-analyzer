@@ -85,6 +85,23 @@ def footsteps(name, folder):
     return pickle.load(open(cache, 'rb'))
 
 
+def model(G):
+    """Модель шанса победы по всем раундам G и события с изменением шанса для команды действующего (gain);
+    credit — то же по игрокам: фраги/установки/разминирования в плюс, смерти в минус."""
+    S = [s for g, _ in G.values() for s in g['states']]
+    X = np.array([s for s, _ in S]); y = np.array([float(w) for _, w in S])
+    w = fit_logit(X, y)
+    wp = lambda f: float(1 / (1 + np.exp(-np.dot(f, w))))
+    E = pd.DataFrame([e for g, _ in G.values() for e in g['events']])
+    E['ct_before'] = [wp(b) for b in E.before]
+    E['ct_after'] = [1.0 if t == 'defuse' else wp(a) for t, a in zip(E.typ, E.after)]
+    E['gain'] = np.where(E.team == 3, 1, -1) * (E.ct_after - E.ct_before)
+    E['team_before'] = np.where(E.team == 3, E.ct_before, 1 - E.ct_before)
+    credit = pd.concat([E[['m', 'r', 'actor', 'keepA', 'gain', 'typ']].rename(columns={'actor': 'P', 'keepA': 'keep'}),
+                        E[E.typ == 'kill'][['m', 'r', 'victim', 'keepV', 'gain']].rename(columns={'victim': 'P', 'keepV': 'keep'}).assign(gain=lambda x: -x.gain, typ='death')])
+    return w, X, y, E, credit
+
+
 def main(folder):
     G = {}
     for f in sorted(glob.glob(os.path.join(folder, 'res_*.pkl'))):
@@ -94,27 +111,17 @@ def main(folder):
     moments = []
 
     # 1) модель вероятности победы
-    S = [s for g, _ in G.values() for s in g['states']]
-    X = np.array([s for s, _ in S]); y = np.array([float(w) for _, w in S])
-    w = fit_logit(X, y)
+    w, X, y, E, credit = model(G)
     p = 1 / (1 + np.exp(-X @ w))
     base = fit_logit(X[:, :3], y); pb = 1 / (1 + np.exp(-X[:, :3] @ base))
     ll = lambda q: -np.mean(y * np.log(q) + (1 - y) * np.log(1 - q))
-    print(f"МОДЕЛЬ ВЕРОЯТНОСТИ ПОБЕДЫ В РАУНДЕ: {len(S)} состояний из {len(G)} матчей; log-loss {ll(p):.3f} (только «кто жив» {ll(pb):.3f}, монетка 0.693)")
+    print(f"МОДЕЛЬ ВЕРОЯТНОСТИ ПОБЕДЫ В РАУНДЕ: {len(y)} состояний из {len(G)} матчей; log-loss {ll(p):.3f} (только «кто жив» {ll(pb):.3f}, монетка 0.693)")
     cal = pd.DataFrame(dict(p=p, y=y)).assign(b=lambda x: pd.cut(x.p, [0, .2, .4, .6, .8, 1]))
     print('  калибровка (предсказано → факт):', ', '.join(f"{g.p.mean():.2f}→{g.y.mean():.2f} (n={len(g)})" for _, g in cal.groupby('b', observed=True)))
     wp = lambda f: float(1 / (1 + np.exp(-np.dot(f, w))))
     for a, b in ((5, 5), (5, 4), (4, 5), (4, 3), (2, 1), (1, 2)):
         print(f"    {a}v{b} при равном снаряжении, без бомбы, середина раунда: CT {wp(features(a, b, 4000 * a, 4000 * b, 0, 40, 0)) * 100:.0f}%", end=';')
     print(f"  4v4 после установки, 10 с: CT {wp(features(4, 4, 16000, 16000, 1, 60, 10)) * 100:.0f}%")
-
-    E = pd.DataFrame([e for g, _ in G.values() for e in g['events']])
-    E['ct_before'] = [wp(b) for b in E.before]
-    E['ct_after'] = [1.0 if t == 'defuse' else wp(a) for t, a in zip(E.typ, E.after)]
-    E['gain'] = np.where(E.team == 3, 1, -1) * (E.ct_after - E.ct_before)   # для команды действующего игрока
-    E['team_before'] = np.where(E.team == 3, E.ct_before, 1 - E.ct_before)
-    credit = pd.concat([E[['m', 'r', 'actor', 'keepA', 'gain', 'typ']].rename(columns={'actor': 'P', 'keepA': 'keep'}),
-                        E[E.typ == 'kill'][['m', 'r', 'victim', 'keepV', 'gain']].rename(columns={'victim': 'P', 'keepV': 'keep'}).assign(gain=lambda x: -x.gain, typ='death')])
     rounds_n = Counter((m, s) for g, _ in G.values() for x in g['rounds'] for m, s in [(x['m'], x['sid'])])
     per = credit.groupby(['m', 'P']).gain.sum().reset_index()
     per['n'] = [rounds_n[(m, s)] for m, s in zip(per.m, per.P)]

@@ -12,9 +12,10 @@ WEAK = {('de_anubis', 'CT', 'Canal'), ('de_anubis', 'CT', 'Middle'), ('de_ancien
 
 D = pd.concat([x for f in sorted(glob.glob(os.path.join(FOLDER, 'duels_*.pkl'))) if (x := pickle.load(open(f, 'rb'))) is not None], ignore_index=True)
 D = D[~D.post]
-P = pd.concat([D.assign(P=D.K, won=True, spd=D.spd_k, ospd=D.spd_v, pre=D.k_pre, off0=D.k_off0, side=D.side_k, place=D.place_k),
-               D.assign(P=D.V, won=False, spd=D.spd_v, ospd=D.spd_k, pre=D.v_pre, off0=D.v_off0, side=D.side_v, place=D.place_v)])
-me = P[P.P == ME].assign(after=lambda x: x.m.str[:10] >= SINCE)
+P = pd.concat([D.assign(P=D.K, keep=D.keepK, won=True, spd=D.spd_k, ospd=D.spd_v, pre=D.k_pre, off0=D.k_off0, side=D.side_k, place=D.place_k),
+               D.assign(P=D.V, keep=D.keepV, won=False, spd=D.spd_v, ospd=D.spd_k, pre=D.v_pre, off0=D.v_off0, side=D.side_v, place=D.place_v)])
+P = P.assign(after=lambda x: x.m.str[:10] >= SINCE)
+me, lob = P[P.P == ME], P[(P.P != ME) & P.keep]
 aim = []
 for f in sorted(glob.glob(os.path.join(FOLDER, 'res_*.pkl'))):
     m = os.path.basename(f)[4:-4]
@@ -33,13 +34,19 @@ def share(x, mask):
 print(f"ФОКУСМАП: до {SINCE} — {me[~me.after].m.nunique()} матчей, после — {me[me.after].m.nunique()} матчей")
 for lab, after in (('до', False), ('после', True)):
     x = me[me.after == after]; mv = x[(x.spd > MOVE) & (x.off0 < 15)]
+    lx = lob[lob.after == after]; lmv = lx[(lx.spd > MOVE) & (lx.off0 < 15)]
+    pp = lmv.groupby('P').pre.agg(lambda s: (s == True).mean()); pp = pp[lmv.groupby('P').size() >= 8]
     held, peek = (x.spd < HOLD) & (x.ospd > MOVE), (x.spd > MOVE) & (x.ospd < HOLD)
     a = A[A.after == after]; d = myd[myd.after == after]; u = d[~d.traded]
     weak = x[[(m, s, p) in WEAK for m, s, p in zip(x['map'], x.side, x.place)]]
     print(f"\n{lab.upper()}:")
-    print(f"  1) в дуэлях на ходу прицел уже на враге        {share(mv, mv.pre == True)}   винрейт таких дуэлей {mv.won.mean() * 100:.0f}%  (цель 55%+)")
+    print(f"  1) в дуэлях на ходу прицел уже на враге        {share(mv, mv.pre == True)}   лобби {(lmv.pre == True).mean() * 100:.0f}%"
+          f" (игроки с 8+ такими дуэлями: медиана {pp.median() * 100:.0f}%, верхняя четверть от {pp.quantile(.75) * 100:.0f}%; цель 55%+)")
+    print(f"     винрейт: прицел на враге {mv[mv.pre == True].won.mean() * 100:.0f}% | лобби {lmv[lmv.pre == True].won.mean() * 100:.0f}%;"
+          f"  не на враге {mv[mv.pre != True].won.mean() * 100:.0f}% | лобби {lmv[lmv.pre != True].won.mean() * 100:.0f}%")
     print(f"     1-й выстрел ниже головы (рифлы), медиана    {a.v.median():.2f}° (n={len(a)})")
     print(f"  2) смертей без размена с 2+ гранатами          {share(u, u.nades_v >= 2)}  (цель ≤30%)")
     print(f"     слабые точки: убийств {int(weak.won.sum())} / смертей {int((~weak.won).sum())}")
-    print(f"  3) дуэлей, где ты держал угол                  {share(x, held)}   где выглядывал на держащего {share(x, peek)}")
+    lheld, lpeek = (lx.spd < HOLD) & (lx.ospd > MOVE), (lx.spd > MOVE) & (lx.ospd < HOLD)
+    print(f"  3) дуэлей, где ты держал угол                  {share(x, held)} (лобби {lheld.mean() * 100:.0f}%)   где выглядывал на держащего {share(x, peek)} (лобби {lpeek.mean() * 100:.0f}%)")
     print(f"     винрейт: держал {x[held].won.mean() * 100:.0f}%, выглядывал {x[peek].won.mean() * 100:.0f}%;  дуэлей всего {len(x)}, винрейт {x.won.mean() * 100:.0f}%")

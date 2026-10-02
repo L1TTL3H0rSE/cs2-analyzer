@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "login": "node src/login.js",
-    "collect": "node src/collect.js"
+    "collect": "node src/collect.js",
+    "import": "node src/import.js"
   },
   "dependencies": {
     "playwright": "^1.48.0"

@@ -44,6 +44,7 @@ for f in sorted(glob.glob(os.path.join(FOLDER, 'res_*.pkl'))):
             rows.append(dict(
                 m=m, map=R['map'], r=r, sec=(t - fe[r - 1]) / TICK, P=P, keep=P in M['keep'], side=side, won=won,
                 place=x.attacker_last_place_name if won else x.user_last_place_name,
+                op_place=x.user_last_place_name if won else x.attacker_last_place_name, weapon=x.weapon, tick=t,
                 role='ты выглядывал на стоящего' if spd > MOVE and ospd < HOLD else 'выглянул он, ты стоял' if ospd > MOVE and spd < HOLD
                 else 'оба двигались' if spd > MOVE and ospd > MOVE else 'оба стояли' if spd < HOLD and ospd < HOLD else 'неясно',
                 saw='ты увидел раньше' if adv > SAW else 'тебя увидели раньше' if adv < -SAW else 'одновременно' if adv == adv else 'нет данных',
@@ -78,6 +79,10 @@ print('\n  раунд выигран командой: опенинг выигр
 la, lb = a[~a.won], b[~b.won]
 print(f"  проигранные опенинги: разменяли {la.traded.mean() * 100:.0f}% | лобби {lb.traded.mean() * 100:.0f}%;  причины:",
       {k: f"{v / len(la) * 100:.0f}%" for k, v in Counter(la.cat).most_common()}, '| лобби', {k: f"{v / len(lb) * 100:.0f}%" for k, v in Counter(lb.cat).most_common(4)})
+out = os.path.join(FOLDER, 'my_openings.csv')
+me.sort_values(['m', 'r'])[['m', 'r', 'sec', 'side', 'won', 'place', 'op_place', 'weapon', 'role', 'flash', 'near_b', 'saw', 'pre', 'buy', 'round_won', 'traded', 'cat', 'tick']].round(1) \
+    .to_csv(out, index=False, encoding='utf-8-sig')
+print(f"\n  все твои опенинги (обе стороны): {os.path.abspath(out)}")
 print(f"\n  точки твоих опенингов за {SIDE_} (карта, место: выиграно–проиграно, медиана секунды):")
 for (mp, pl_), x in sorted(a.groupby(['map', 'place']), key=lambda kv: -len(kv[1]))[:12]:
     print(f"    {mp[3:]:8} {pl_:16} {int(x.won.sum())}–{int((~x.won).sum())}   {x.sec.median():.0f} с   флешка {x.sup.mean() * 100:.0f}%, тиммейт рядом {(x.near <= NEAR).mean() * 100:.0f}%")

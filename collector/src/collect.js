@@ -49,10 +49,22 @@ try {
       const map = (info.map || 'map').replace(/[^a-z0-9_]/gi, '');
       const file = join(config.demoDir, `${date}_${map}_${matchId}${ext}`);
 
-      const res = await fetch(p.downloadUrl);
-      if (!res.ok) { failures++; log(matchId, 'скачивание HTTP', res.status); continue; }
-      // .part → rename: недокачанный файл не выглядит готовой демкой
-      await pipeline(Readable.fromWeb(res.body), createWriteStream(file + '.part'));
+      // связь бывает рвётся молча: 60 с без данных — обрыв и до 3 попыток заново
+      let ok = false;
+      for (let attempt = 1; attempt <= 3 && !ok; attempt++) {
+        const ac = new AbortController(); let timer;
+        const kick = () => { clearTimeout(timer); timer = setTimeout(() => ac.abort(new Error('нет данных 60 с')), 60_000); };
+        try {
+          kick();
+          const res = await fetch(p.downloadUrl, { signal: ac.signal });
+          if (!res.ok) { log(matchId, 'скачивание HTTP', res.status); break; }
+          const body = Readable.fromWeb(res.body).on('data', kick);
+          // .part → rename: недокачанный файл не выглядит готовой демкой
+          await pipeline(body, createWriteStream(file + '.part'));
+          ok = true;
+        } catch (e) { log(matchId, `попытка ${attempt}:`, e.message); } finally { clearTimeout(timer); }
+      }
+      if (!ok) { failures++; continue; }
       renameSync(file + '.part', file);
       state.done[matchId] = { file, map: info.map, won: info.won, score: info.score, finishedAt: iso(finishedAt), at: new Date().toISOString() };
       save();

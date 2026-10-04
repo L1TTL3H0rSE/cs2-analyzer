@@ -1,7 +1,9 @@
 # Сравнение твоих матчей на карте: раньше даты («до») и с даты («после») — общая игра, стороны, дуэли и аим,
 # причины смертей, конверсия, вклад в раунды, позиции, AWP.
 #   python compare.py de_dust2 2026-10-01   (нужны таблицы extract.py и кэши duels.py, conversion.py, awp.py)
-import glob, os, pickle, sys
+#   python compare.py all 2026-10-03T09:00 2026-10-03T14:00 2026-10-04   — два окна [1-я, 2-я) и [2-я, 3-я), напр. сетапы
+#     внутри одного дня; время — UTC, начало матча (finishedAt в collector/state.json), all — все карты
+import glob, json, os, pickle, sys
 from collections import Counter
 import numpy as np, pandas as pd
 from report import match, ME, ratio_ci, lobby_elo
@@ -9,15 +11,18 @@ from duels import annotate, MOVE, HOLD
 from impact import rounds_of, model
 
 FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'demos', 'parsed')
-MAP, SINCE = sys.argv[1], sys.argv[2]
+MAP, CUTS = sys.argv[1], sys.argv[2:]
 RIFLES = {'ak47', 'm4a1_silencer', 'm4a1', 'galilar', 'famas', 'aug', 'sg556'}
-grp = lambda m: 'после' if m[:10] >= SINCE else 'до'
+STATE = json.load(open(os.path.join(FOLDER, '..', '..', 'collector', 'state.json'), encoding='utf-8'))['done']
+when = lambda m: (STATE.get('1-' + m.split('_1-')[1], {}).get('finishedAt') or m[:10])
+lo_, mid, hi_ = (CUTS + [''])[:3] if len(CUTS) == 3 else ('', CUTS[0], '￿')
+grp = lambda m: None if not lo_ <= when(m) < hi_ else 'после' if when(m) >= mid else 'до'
 GR = ('до', 'после')
 
 res = {os.path.basename(f)[4:-4]: pickle.load(open(f, 'rb')) for f in sorted(glob.glob(os.path.join(FOLDER, 'res_*.pkl')))}
 M = {m: match(m, R) for m, R in res.items()}
 M = {m: x for m, x in M.items() if x['short'] < 0.2}
-sel = [m for m in M if f'_{MAP}_' in m]
+sel = [m for m in M if (MAP == 'all' or f'_{MAP}_' in m) and grp(m)]
 by = {g: [m for m in sel if grp(m) == g] for g in GR}
 
 
@@ -34,7 +39,7 @@ def wl(g):
     return f"{len(s)} матчей, {sum(a > b for a, b in s)}–{sum(a < b for a, b in s)}"
 
 
-print(f"{MAP}: до {SINCE} — {wl('до')}; после — {wl('после')}")
+print(f"{MAP}: до {mid} — {wl('до')}; после — {wl('после')}")
 el = {g: np.nanmean([lobby_elo(m) for m in by[g]]) for g in GR}
 # ponytail: −3.4 ADR на +100 ELO лобби — оценка analysis/faceit/elo.py по 100 матчам; пересчитать, когда матчей станет больше
 print(f"  средний ELO лобби: до {el['до']:.0f} | после {el['после']:.0f} → только из-за лобби ожидаемо ADR {-3.4 * (el['после'] - el['до']) / 100:+.1f}")
@@ -74,8 +79,8 @@ for side in ('CT', 'T'):
 # дуэли и аим
 D, per, exp, ok = annotate(pd.concat([x for f in sorted(glob.glob(os.path.join(FOLDER, 'duels_*.pkl'))) if (x := pickle.load(open(f, 'rb'))) is not None], ignore_index=True))
 D = D[D.m.isin(sel) & ~D.post]
-P = pd.concat([D.assign(P=D.K, won=True, spd=D.spd_k, ospd=D.spd_v, pre=D.k_pre, off0=D.k_off0, g_=D.k_grp, og=D.v_grp),
-               D.assign(P=D.V, won=False, spd=D.spd_v, ospd=D.spd_k, pre=D.v_pre, off0=D.v_off0, g_=D.v_grp, og=D.k_grp)])
+P = pd.concat([D.assign(P=D.K, won=True, spd=D.spd_k, ospd=D.spd_v, pre=D.k_pre, off0=D.k_off0, g_=D.k_grp, og=D.v_grp, react=D.k_react, fs_hit=D.k_fs_hit),
+               D.assign(P=D.V, won=False, spd=D.spd_v, ospd=D.spd_k, pre=D.v_pre, off0=D.v_off0, g_=D.v_grp, og=D.k_grp, react=D.v_react, fs_hit=D.v_fs_hit)])
 P = P[P.P == ME].assign(G=lambda x: x.m.map(grp))
 q = lambda g: P[P.G == g]
 print('ДУЭЛИ И АИМ')
@@ -92,7 +97,10 @@ row('против AWP/скаута, винрейт %', lambda g: q(g)[q(g).og ==
 aim = pd.concat([res[m]['aim'].assign(G=grp(m)) for m in sel])
 aim = aim[(aim.att.astype(str) == ME) & (aim.when == 'first') & aim.weapon.isin(list(RIFLES))]
 row('1-й выстрел ниже головы (рифлы), °', lambda g: aim[aim.G == g].v.median(), '{:.2f}')
+row('время до 1-го выстрела (медиана), мс', lambda g: q(g).react.median())
+row('1-й выстрел попал, %', lambda g: (q(g).fs_hit == True).sum() / max(q(g).fs_hit.notna().sum(), 1) * 100)
 dd = D[D.V == ME].assign(G=lambda x: x.m.map(grp))
+row('проиграл дуэль, попав по врагу (не добил), %', lambda g: (dd[dd.G == g].v_hits > 0).mean() * 100)
 print('  причины проигранных дуэлей (доля твоих смертей):')
 for cat in ['аим', 'позиционка', 'оружие/HP', 'решение', 'прочее', 'на равных']:
     row(f'    {cat}, %', lambda g: (dd[dd.G == g].cat == cat).mean() * 100)

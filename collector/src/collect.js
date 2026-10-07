@@ -41,17 +41,17 @@ try {
       const info = await getDemoResourceBrowser(page, matchId, me);
       if (!info.resourceUrl) { log(matchId, 'нет demo_url:', info.status ?? info.error); continue; }
 
-      const p = await getPresignedUrl(page, matchId, info.resourceUrl);
-      if (!p.downloadUrl) { failures++; log(matchId, 'presign не удался', p.status, p.error ?? p.raw ?? ''); continue; }
-
-      const ext = new URL(p.downloadUrl).pathname.endsWith('.zst') ? '.dem.zst' : '.dem.gz';
       const date = finishedAt ? new Date(finishedAt * 1000).toISOString().slice(0, 10) : 'unknown';
       const map = (info.map || 'map').replace(/[^a-z0-9_]/gi, '');
-      const file = join(config.demoDir, `${date}_${map}_${matchId}${ext}`);
+      let file;
 
-      // связь бывает рвётся молча: 60 с без данных — обрыв и до 3 попыток заново
+      // связь бывает рвётся молча: 60 с без данных — обрыв и до 3 попыток заново;
+      // подписанная ссылка живёт недолго (повтор по старой после обрыва — HTTP 401), поэтому на каждую попытку новая
       let ok = false;
       for (let attempt = 1; attempt <= 3 && !ok; attempt++) {
+        const p = await getPresignedUrl(page, matchId, info.resourceUrl);
+        if (!p.downloadUrl) { log(matchId, 'presign не удался', p.status, p.error ?? p.raw ?? ''); break; }
+        file = join(config.demoDir, `${date}_${map}_${matchId}${new URL(p.downloadUrl).pathname.endsWith('.zst') ? '.dem.zst' : '.dem.gz'}`);
         const ac = new AbortController(); let timer;
         const kick = () => { clearTimeout(timer); timer = setTimeout(() => ac.abort(new Error('нет данных 60 с')), 60_000); };
         try {
